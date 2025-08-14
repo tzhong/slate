@@ -124,19 +124,25 @@ static NSDictionary *jscJsMethods;
     } @catch (NSException *ex) {
       SlateLogger(@"JavaScript Error in %@: %@", path, [ex reason]);
       
-      // Delay error dialog by 5 seconds to avoid blocking startup
-      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        NSAlert *alert = [[NSAlert alloc] init];
-        [alert setAlertStyle:NSAlertStyleWarning];
-        [alert setMessageText:@".slate.js Parsing Error"];
-        [alert setInformativeText:[NSString stringWithFormat:@"Error in %@:\n\n%@", [path lastPathComponent], [ex reason]]];
-        [alert addButtonWithTitle:@"Continue"];
-        [alert addButtonWithTitle:@"Quit"];
-        if ([alert runModal] == NSAlertSecondButtonReturn) {
-          SlateLogger(@"User selected exit due to JavaScript error");
-          [NSApp terminate:nil];
-        }
-      });
+      // Only show error dialog once per session
+      static BOOL hasShownErrorDialog = NO;
+      if (!hasShownErrorDialog) {
+        hasShownErrorDialog = YES;
+        
+        // Delay error dialog by 5 seconds to avoid blocking startup
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+          NSAlert *alert = [[NSAlert alloc] init];
+          [alert setAlertStyle:NSAlertStyleWarning];
+          [alert setMessageText:@".slate.js Parsing Error"];
+          [alert setInformativeText:[NSString stringWithFormat:@"Error in %@:\n\n%@", [path lastPathComponent], [ex reason]]];
+          [alert addButtonWithTitle:@"Continue"];
+          [alert addButtonWithTitle:@"Quit"];
+          if ([alert runModal] == NSAlertSecondButtonReturn) {
+            SlateLogger(@"User selected exit due to JavaScript error");
+            [NSApp terminate:nil];
+          }
+        });
+      }
       
       return NO;
     }
