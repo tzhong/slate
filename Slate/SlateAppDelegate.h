@@ -70,6 +70,7 @@
 @property NSString *currentModalKey;
 @property NSMutableArray *currentModalHotKeyRefs;
 @property (assign) BOOL hasUndoOperation;
+@property (assign) BOOL automaticallyChecksForUpdates; // Dummy property for XIB compatibility
 
 
 - (IBAction)updateLaunchState;

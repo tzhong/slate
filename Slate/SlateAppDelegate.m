@@ -32,13 +32,13 @@
 #import "SwitchOperation.h"
 #import "RunningApplications.h"
 #import "GridOperation.h"
-#import <Sparkle/SUUpdater.h>
+// #import <Sparkle/SUUpdater.h>
 
 @implementation SlateAppDelegate
 
 @synthesize currentHintOperation, currentGridOperation, currentSwitchBinding, menuSnapshotOperation;
 @synthesize menuActivateSnapshotOperation, cmdTabBinding, cmdShiftTabBinding, modalHotKeyRefs, modalIdToKey;
-@synthesize currentModalKey, currentModalHotKeyRefs, undoSnapshotOperation, undoDeleteSnapshotOperation, hasUndoOperation;
+@synthesize currentModalKey, currentModalHotKeyRefs, undoSnapshotOperation, undoDeleteSnapshotOperation, hasUndoOperation, automaticallyChecksForUpdates;
 
 static NSObject *timerLock = nil;
 static NSObject *keyUpLock = nil;
@@ -60,15 +60,7 @@ static EventHandlerRef modifiersEvent;
 }
 
 - (IBAction)relaunch {
-  NSString *launcherSource = [[NSBundle bundleForClass:[SUUpdater class]]  pathForResource:@"relaunch" ofType:@""];
-  NSString *launcherTarget = [NSTemporaryDirectory() stringByAppendingPathComponent:[launcherSource lastPathComponent]];
-  NSString *appPath = [[NSBundle mainBundle] bundlePath];
-  NSString *processID = [NSString stringWithFormat:@"%d", [[NSProcessInfo processInfo] processIdentifier]];
-
-  [[NSFileManager defaultManager] removeItemAtPath:launcherTarget error:NULL];
-  [[NSFileManager defaultManager] copyItemAtPath:launcherSource toPath:launcherTarget error:NULL];
-
-  [NSTask launchedTaskWithLaunchPath:launcherTarget arguments:[NSArray arrayWithObjects:appPath, processID, nil]];
+  // Sparkle auto-update disabled for arm64 compatibility
   [NSApp terminate:self];
 }
 
@@ -120,7 +112,8 @@ static EventHandlerRef modifiersEvent;
     EventHotKeyRef myHotKeyRef;
     myHotKeyID.signature = *[[NSString stringWithFormat:@"hotkey%li",i] cStringUsingEncoding:NSASCIIStringEncoding];
     myHotKeyID.id = (UInt32)i;
-    RegisterEventHotKey([binding keyCode], [binding modifiers], myHotKeyID, GetEventMonitorTarget(), 0, &myHotKeyRef);
+    OSStatus result = RegisterEventHotKey([binding keyCode], [binding modifiers], myHotKeyID, GetEventMonitorTarget(), 0, &myHotKeyRef);
+    SlateLogger(@"RegisterEventHotKey result for key %u, modifiers %u: %d", [binding keyCode], [binding modifiers], (int)result);
     [binding setHotKeyRef:myHotKeyRef];
   }
 
@@ -399,6 +392,7 @@ OSStatus OnHotKeyEvent(EventHandlerCallRef nextHandler, EventRef theEvent, void 
   if (![(__bridge id)userData isKindOfClass:[SlateAppDelegate class]]) return noErr;
   EventHotKeyID hkCom;
   GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, NULL, sizeof(hkCom), NULL, &hkCom);
+  SlateLogger(@"DEBUG: OnHotKeyPressedEvent received - ID: %u", hkCom.id);
   return [(__bridge SlateAppDelegate *)userData activateBinding:hkCom isRepeat:NO];
 }
 

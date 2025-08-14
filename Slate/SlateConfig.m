@@ -144,8 +144,11 @@ static SlateConfig *_instance = nil;
   [self setDefaultLayouts:[[NSMutableArray alloc] init]];
   [self setAliases:[[NSMutableDictionary alloc] init]];
 
+  SlateLogger(@"DEBUG: Starting config loading...");
   BOOL loadedDefault = [self loadConfigFileWithPath:@"~/.slate"];
+  SlateLogger(@"DEBUG: loadedDefault = %@", loadedDefault ? @"YES" : @"NO");
   BOOL loadedJS = [self loadConfigFileWithPath:@"~/.slate.js"];
+  SlateLogger(@"DEBUG: loadedJS = %@", loadedJS ? @"YES" : @"NO");
 
   if (!loadedDefault && !loadedJS) {
     SlateLogger(@"  ERROR Could not load ~/.slate or ~/.slate.js");

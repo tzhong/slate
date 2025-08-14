@@ -52,7 +52,15 @@ static NSDictionary *jscJsMethods;
 - (id)run:(NSString*)code {
 	NSString* script = [NSString stringWithFormat:@"try { %@ } catch (___ex___) { 'EXCEPTION: '+___ex___; }", code];
 	id data = [scriptObject evaluateWebScript:script];
-	if(![data isMemberOfClass:[WebUndefined class]]) {
+	
+	// Check for syntax errors or undefined results
+	if ([data isMemberOfClass:[WebUndefined class]]) {
+		SlateLogger(@"DEBUG: JavaScript evaluation returned WebUndefined - possible syntax error");
+		// For syntax errors, WebKit often returns WebUndefined
+		@throw([NSException exceptionWithName:@"JavaScript Syntax Error" reason:@"Syntax error detected - check for missing semicolons, unclosed brackets, or invalid JavaScript syntax" userInfo:nil]);
+	}
+	
+	if(data != nil) {
 		SlateLogger(@"%@", data);
     if ([data isKindOfClass:[NSString class]] && [data hasPrefix:@"EXCEPTION: "]) {
       @throw([NSException exceptionWithName:@"JavaScript Error" reason:data userInfo:nil]);
@@ -78,14 +86,22 @@ static NSDictionary *jscJsMethods;
 }
 
 - (id)runFunction:(WebScriptObject *)function {
+  SlateLogger(@"DEBUG: runFunction called with function: %@", function);
   [scriptObject setValue:function forKey:@"_slate_callback"];
-  return [self run:@"window._slate_callback();"];
+  SlateLogger(@"DEBUG: About to call window._slate_callback()");
+  id result = [self run:@"window._slate_callback();"];
+  SlateLogger(@"DEBUG: runFunction result: %@", result);
+  return result;
 }
 
 - (id)runFunction:(WebScriptObject *)function withArg:(id)arg {
+  SlateLogger(@"DEBUG: runFunction:withArg called with function: %@ arg: %@", function, arg);
   [scriptObject setValue:function forKey:@"_slate_callback"];
   [scriptObject setValue:arg forKey:@"_slate_callback_arg"];
-  return [self run:@"window._slate_callback(window._slate_callback_arg);"];
+  SlateLogger(@"DEBUG: About to call window._slate_callback(window._slate_callback_arg)");
+  id result = [self run:@"window._slate_callback(window._slate_callback_arg);"];
+  SlateLogger(@"DEBUG: runFunction:withArg result: %@", result);
+  return result;
 }
 
 - (id)runFunction:(WebScriptObject *)function withArg:(id)arg secondArg:(id)arg2 {
@@ -96,12 +112,36 @@ static NSDictionary *jscJsMethods;
 }
 
 - (BOOL)runFile:(NSString*)path {
+  SlateLogger(@"DEBUG: runFile called with path: %@", path);
   NSError *err;
   NSString *fileString = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&err];
   if(err == nil && fileString != nil && fileString != NULL) {
-    [self run:fileString];
-    return YES;
+    SlateLogger(@"DEBUG: Successfully read file, length: %lu bytes", (unsigned long)[fileString length]);
+    @try {
+      [self run:fileString];
+      SlateLogger(@"DEBUG: File execution completed");
+      return YES;
+    } @catch (NSException *ex) {
+      SlateLogger(@"JavaScript Error in %@: %@", path, [ex reason]);
+      
+      // Delay error dialog by 5 seconds to avoid blocking startup
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setAlertStyle:NSAlertStyleWarning];
+        [alert setMessageText:@".slate.js Parsing Error"];
+        [alert setInformativeText:[NSString stringWithFormat:@"Error in %@:\n\n%@", [path lastPathComponent], [ex reason]]];
+        [alert addButtonWithTitle:@"Continue"];
+        [alert addButtonWithTitle:@"Quit"];
+        if ([alert runModal] == NSAlertSecondButtonReturn) {
+          SlateLogger(@"User selected exit due to JavaScript error");
+          [NSApp terminate:nil];
+        }
+      });
+      
+      return NO;
+    }
   }
+  SlateLogger(@"DEBUG: Failed to read file. Error: %@", err ? [err localizedDescription] : @"Unknown error");
   return NO;
 }
 
@@ -133,9 +173,14 @@ static NSDictionary *jscJsMethods;
 }
 
 - (BOOL)loadConfigFileWithPath:(NSString *)path {
+  SlateLogger(@"DEBUG: loadConfigFileWithPath called with: %@", path);
   [self initializeWebView];
   @try {
-    return [self runFile:[path stringByExpandingTildeInPath]];
+    NSString *expandedPath = [path stringByExpandingTildeInPath];
+    SlateLogger(@"DEBUG: Expanded path: %@", expandedPath);
+    BOOL result = [self runFile:expandedPath];
+    SlateLogger(@"DEBUG: Config file loading result: %@", result ? @"SUCCESS" : @"FAILED");
+    return result;
   } @catch (NSException *ex) {
     SlateLogger(@"   ERROR %@",[ex name]);
     NSAlert *alert = [SlateConfig warningAlertWithKeyEquivalents: [NSArray arrayWithObjects:@"Quit", @"Skip", nil]];

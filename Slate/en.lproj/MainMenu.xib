@@ -2535,10 +2535,10 @@
 					<object class="IBBindingConnection" key="connection">
 						<string key="label">value: automaticallyChecksForUpdates</string>
 						<reference key="source" ref="758309769"/>
-						<reference key="destination" ref="757407638"/>
+						<reference key="destination" ref="976324537"/>
 						<object class="NSNibBindingConnector" key="connector">
 							<reference key="NSSource" ref="758309769"/>
-							<reference key="NSDestination" ref="757407638"/>
+							<reference key="NSDestination" ref="976324537"/>
 							<string key="NSLabel">value: automaticallyChecksForUpdates</string>
 							<string key="NSBinding">value</string>
 							<string key="NSKeyPath">automaticallyChecksForUpdates</string>
