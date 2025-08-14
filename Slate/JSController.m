@@ -124,24 +124,20 @@ static NSDictionary *jscJsMethods;
     } @catch (NSException *ex) {
       SlateLogger(@"JavaScript Error in %@: %@", path, [ex reason]);
       
-      // Only show error dialog once per session
-      static BOOL hasShownErrorDialog = NO;
-      if (!hasShownErrorDialog) {
-        hasShownErrorDialog = YES;
-        
-        // Delay error dialog by 5 seconds to avoid blocking startup
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-          NSAlert *alert = [[NSAlert alloc] init];
-          [alert setAlertStyle:NSAlertStyleWarning];
-          [alert setMessageText:@".slate.js Parsing Error"];
-          [alert setInformativeText:[NSString stringWithFormat:@"Error in %@:\n\n%@", [path lastPathComponent], [ex reason]]];
-          [alert addButtonWithTitle:@"Continue"];
-          [alert addButtonWithTitle:@"Quit"];
-          if ([alert runModal] == NSAlertSecondButtonReturn) {
-            SlateLogger(@"User selected exit due to JavaScript error");
-            [NSApp terminate:nil];
-          }
-        });
+      // For .slate.js files and syntax errors, just log - don't show dialog as non-breaking errors are expected
+      if ([[path lastPathComponent] isEqualToString:@".slate.js"] || 
+          [[ex name] isEqualToString:@"JavaScript Syntax Error"]) {
+        SlateLogger(@"Non-breaking JavaScript error (continuing): %@", [ex reason]);
+        return NO;
+      }
+      
+      // For other serious JavaScript errors, show error dialog
+      NSAlert *alert = [SlateConfig warningAlertWithKeyEquivalents: [NSArray arrayWithObjects:@"Quit", @"Skip", nil]];
+      [alert setMessageText:[ex name]];
+      [alert setInformativeText:[ex reason]];
+      if ([alert runModal] == NSAlertFirstButtonReturn) {
+        SlateLogger(@"User selected exit");
+        [NSApp terminate:nil];
       }
       
       return NO;
@@ -181,10 +177,34 @@ static NSDictionary *jscJsMethods;
 - (BOOL)loadConfigFileWithPath:(NSString *)path {
   SlateLogger(@"DEBUG: loadConfigFileWithPath called with: %@", path);
   [self initializeWebView];
+  
+  // Track if this is a .slate.js file and if any bindings are registered
+  BOOL isSlateJS = [[path lastPathComponent] isEqualToString:@".slate.js"];
+  static int bindingCountBeforeSlateJS = 0;
+  if (isSlateJS) {
+    bindingCountBeforeSlateJS = [[[SlateConfig getInstance] bindings] count];
+  }
+  
   @try {
     NSString *expandedPath = [path stringByExpandingTildeInPath];
     SlateLogger(@"DEBUG: Expanded path: %@", expandedPath);
     BOOL result = [self runFile:expandedPath];
+    
+    // Check if .slate.js processed but no bindings were registered
+    if (isSlateJS) {
+      int bindingCountAfterSlateJS = [[[SlateConfig getInstance] bindings] count];
+      if (bindingCountAfterSlateJS == bindingCountBeforeSlateJS) {
+        SlateLogger(@"No JavaScript bindings registered from .slate.js - showing error dialog");
+        NSAlert *alert = [SlateConfig warningAlertWithKeyEquivalents: [NSArray arrayWithObjects:@"Quit", @"Skip", nil]];
+        [alert setMessageText:@"JavaScript Configuration Error"];
+        [alert setInformativeText:@"No bindings were registered from .slate.js file. Check for syntax errors or missing slate.bind() calls."];
+        if ([alert runModal] == NSAlertFirstButtonReturn) {
+          SlateLogger(@"User selected exit");
+          [NSApp terminate:nil];
+        }
+      }
+    }
+    
     SlateLogger(@"DEBUG: Config file loading result: %@", result ? @"SUCCESS" : @"FAILED");
     return result;
   } @catch (NSException *ex) {
@@ -210,6 +230,7 @@ static NSDictionary *jscJsMethods;
 }
 
 - (void)bindFunction:(NSString *)hotkey callback:(WebScriptObject *)callback repeat:(id)_repeat {
+  SlateLogger(@"DEBUG: JavaScript binding registered - hotkey: %@", hotkey);
   JSOperation *op = [JSOperation jsOperationWithFunction:callback];
   BOOL repeat = NO;
   if (_repeat != nil && ([_repeat isKindOfClass:[NSNumber class]] || [_repeat isKindOfClass:[NSValue class]] || [_repeat isKindOfClass:[NSString class]])) {
@@ -220,6 +241,7 @@ static NSDictionary *jscJsMethods;
   @try {
     Binding *bind = [[Binding alloc] initWithKeystroke:hotkey operation:op repeat:repeat];
     [[SlateConfig getInstance] addBinding:bind];
+    SlateLogger(@"DEBUG: JavaScript binding successfully added for hotkey: %@", hotkey);
   } @catch (NSException *ex) {
     SlateLogger(@"   ERROR %@",[ex name]);
     NSAlert *alert = [SlateConfig warningAlertWithKeyEquivalents: [NSArray arrayWithObjects:@"Quit", @"Skip", nil]];
